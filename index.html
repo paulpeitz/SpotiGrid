@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zeltival 2027</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="https://open.spotifycdn.com/cdn/images/favicon32.b64ecc03.png" type="image/png">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Zeltival 2027</h1>
+    <div class="token-section" id="auth-section">
+      <button id="login-button" type="button">Mit Spotify einloggen</button>
+      <span id="user-info" class="user-info" hidden></span>
+    </div>
+  </header>
+
+  <main>
+    <div id="error-container"></div>
+    <div id="player-status" class="player-status" hidden>
+      <span id="now-playing"></span>
+      <div class="navigation-controls">
+        <button id="back-control" type="button" aria-label="Zum vorherigen Track">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+          </svg>
+        </button>
+        <button id="stop-control" type="button" aria-label="Wiedergabe stoppen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 6h12v12H6z"/>
+          </svg>
+        </button>
+        <button id="forward-control" type="button" aria-label="Zum nächsten Track">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div id="grid-container"></div>
+  </main>
+
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
