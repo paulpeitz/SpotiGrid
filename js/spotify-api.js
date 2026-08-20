@@ -1,23 +1,20 @@
 // Spotify API module - API-Kommunikation
 
+import { isValidTrack } from './track-utils.js';
+
 const BASE_URL = 'https://api.spotify.com/v1';
 const TIMEOUT_MS = 10000;
 
 /**
  * Wählt das Bild mit der größten Breite aus dem images-Array.
  * @param {Array<{url: string, width: number, height: number}>} images
- * @returns {string|null} URL des höchstauflösenden Bildes oder null
+ * @returns {string|null}
  */
 export function selectLargestImage(images) {
-  if (!images || images.length === 0) {
-    return null;
-  }
-
+  if (!images || images.length === 0) return null;
   let largest = images[0];
   for (let i = 1; i < images.length; i++) {
-    if (images[i].width > largest.width) {
-      largest = images[i];
-    }
+    if (images[i].width > largest.width) largest = images[i];
   }
   return largest.url;
 }
@@ -27,8 +24,7 @@ export function selectLargestImage(images) {
  */
 export class SpotifyAPI {
   /**
-   * @param {Object|Function} tokenManagerOrFetchFn - Either a TokenManager instance
-   *   (with an authenticatedFetch method) or a plain fetch function (url, opts) => Promise<Response>
+   * @param {Object|Function} tokenManagerOrFetchFn - TokenManager instance or plain fetch function
    */
   constructor(tokenManagerOrFetchFn) {
     if (typeof tokenManagerOrFetchFn === 'function') {
@@ -39,293 +35,150 @@ export class SpotifyAPI {
   }
 
   /**
-   * Ruft Künstlerdaten für eine einzelne ID ab.
-   * @param {string} artistId - Spotify Artist ID
-   * @returns {Promise<{id: string, name: string, imageUrl: string|null}|null>}
-   * @throws {Error} bei Auth- oder Timeout-Fehlern
+   * Fetch with AbortController timeout.
+   * @param {string} url
+   * @param {RequestInit} [opts]
+   * @returns {Promise<Response>}
    */
-  async getArtist(artistId) {
+  async _fetchWithTimeout(url, opts = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
     try {
-      const response = await this._fetchFn(`${BASE_URL}/artists/${artistId}`, {
-        signal: controller.signal,
-      });
-
+      const response = await this._fetchFn(url, { ...opts, signal: controller.signal });
       clearTimeout(timeoutId);
-
-      if (response.status === 404) {
-        return null;
-      }
-
-      if (!response.ok) {
-        throw new Error(`Spotify API Fehler: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      return {
-        id: data.id,
-        name: data.name,
-        imageUrl: selectLargestImage(data.images),
-      };
+      return response;
     } catch (error) {
       clearTimeout(timeoutId);
-
       if (error.name === 'AbortError') {
-        throw new Error(
-          'Die Spotify API ist nicht erreichbar. Bitte Internetverbindung prüfen.'
-        );
+        throw new Error('Die Spotify API ist nicht erreichbar. Bitte Internetverbindung prüfen.');
       }
-
       throw error;
     }
   }
 
   /**
+   * Ruft Künstlerdaten für eine einzelne ID ab.
+   * @param {string} artistId
+   * @returns {Promise<{id: string, name: string, imageUrl: string|null}|null>}
+   */
+  async getArtist(artistId) {
+    const response = await this._fetchWithTimeout(`${BASE_URL}/artists/${artistId}`);
+
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Spotify API Fehler: ${response.status}`);
+
+    const data = await response.json();
+    return {
+      id: data.id,
+      name: data.name,
+      imageUrl: selectLargestImage(data.images),
+    };
+  }
+
+  /**
    * Ruft Künstlerdaten für mehrere IDs ab.
-   * Nutzt den Batch-Endpunkt /artists?ids= (max 50 pro Request).
-   * Bei 403 fällt es auf Einzelabfragen zurück.
-   * @param {string[]} artistIds - Array von Spotify Artist IDs
+   * Nutzt Batch-Endpunkt mit Fallback auf Einzelabfragen.
+   * @param {string[]} artistIds
    * @returns {Promise<Array<{id: string, name: string, imageUrl: string|null}>>}
    */
   async getArtists(artistIds) {
     if (!artistIds || artistIds.length === 0) return [];
 
-    // Versuch Batch-Request
     try {
       const result = await this._getArtistsBatch(artistIds);
       if (result !== null) return result;
     } catch (e) {
-      // Fallback auf Einzelabfragen
+      // Fallback
     }
 
-    // Fallback: Einzelne Requests mit Verzögerung
     return this._getArtistsSequential(artistIds);
   }
 
-  /**
-   * Batch-Abfrage über /artists?ids=
-   * @returns {Array|null} null bei 403/Fehler (Fallback nötig)
-   */
+  /** @private */
   async _getArtistsBatch(artistIds) {
     const allArtists = [];
 
     for (let i = 0; i < artistIds.length; i += 50) {
-      const batch = artistIds.slice(i, i + 50);
-      const ids = batch.join(',');
+      const ids = artistIds.slice(i, i + 50).join(',');
+      const response = await this._fetchWithTimeout(`${BASE_URL}/artists?ids=${ids}`);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      if (response.status === 403) return null;
 
-      try {
-        const response = await this._fetchFn(`${BASE_URL}/artists?ids=${ids}`, {
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        // 403 = Batch nicht erlaubt, Fallback nötig
-        if (response.status === 403) {
-          return null;
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10);
+        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+        const retryResponse = await this._fetchWithTimeout(`${BASE_URL}/artists?ids=${ids}`);
+        if (retryResponse.ok) {
+          const data = await retryResponse.json();
+          allArtists.push(...this._mapArtists(data.artists));
         }
-
-        if (response.status === 429) {
-          const retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10);
-          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-
-          const retryController = new AbortController();
-          const retryTimeoutId = setTimeout(() => retryController.abort(), TIMEOUT_MS);
-          const retryResponse = await this._fetchFn(`${BASE_URL}/artists?ids=${ids}`, {
-            signal: retryController.signal,
-          });
-          clearTimeout(retryTimeoutId);
-
-          if (retryResponse.ok) {
-            const data = await retryResponse.json();
-            const artists = (data.artists || [])
-              .filter(a => a !== null)
-              .map(a => ({ id: a.id, name: a.name, imageUrl: selectLargestImage(a.images) }));
-            allArtists.push(...artists);
-          }
-          continue;
-        }
-
-        if (!response.ok) {
-          return null;
-        }
-
-        const data = await response.json();
-        const artists = (data.artists || [])
-          .filter(a => a !== null)
-          .map(a => ({ id: a.id, name: a.name, imageUrl: selectLargestImage(a.images) }));
-        allArtists.push(...artists);
-      } catch (error) {
-        clearTimeout(timeoutId);
-        return null;
+        continue;
       }
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      allArtists.push(...this._mapArtists(data.artists));
     }
 
     return allArtists;
   }
 
-  /**
-   * Fallback: Einzelne Requests mit 200ms Abstand um Rate-Limiting zu vermeiden.
-   */
+  /** @private */
   async _getArtistsSequential(artistIds) {
     const results = [];
-
-    for (const id of artistIds) {
+    for (let i = 0; i < artistIds.length; i++) {
       try {
-        const artist = await this.getArtist(id);
+        const artist = await this.getArtist(artistIds[i]);
         if (artist) results.push(artist);
       } catch (e) {
         // Skip failed artist
       }
-      // Kurze Pause zwischen Requests
-      if (artistIds.indexOf(id) < artistIds.length - 1) {
+      if (i < artistIds.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
-
     return results;
   }
 
-  /**
-   * Sucht einen Track mit preview_url für einen Künstler (Legacy).
-   * @param {string} artistName - Name des Künstlers
-   * @returns {Promise<{previewUrl: string, trackName: string}|null>}
-   * @throws {Error} bei Auth- oder Timeout-Fehlern
-   */
-  async findPreviewTrack(artistName) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-    try {
-      const query = encodeURIComponent(`artist:${artistName}`);
-      const response = await this._fetchFn(
-        `${BASE_URL}/search?q=${query}&type=track`,
-        {
-          signal: controller.signal,
-        }
-      );
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const data = await response.json();
-
-      const items = data.tracks && data.tracks.items;
-      if (!items || items.length === 0) {
-        return null;
-      }
-
-      const trackWithPreview = items.find(
-        (item) => item.preview_url !== null
-      );
-
-      if (!trackWithPreview) {
-        return null;
-      }
-
-      return {
-        previewUrl: trackWithPreview.preview_url,
-        trackName: trackWithPreview.name,
-      };
-    } catch (error) {
-      clearTimeout(timeoutId);
-
-      if (error.name === 'AbortError') {
-        throw new Error(
-          'Die Spotify API ist nicht erreichbar. Bitte Internetverbindung prüfen.'
-        );
-      }
-
-      throw error;
-    }
+  /** @private */
+  _mapArtists(artists) {
+    return (artists || [])
+      .filter(a => a !== null)
+      .map(a => ({ id: a.id, name: a.name, imageUrl: selectLargestImage(a.images) }));
   }
 
   /**
    * Sucht einen Track für einen Künstler und gibt die Track-URI zurück.
-   * Verwendet die Spotify Search API – gibt den ersten Track zurück.
-   * @param {string} artistName - Name des Künstlers
+   * @param {string} artistName
    * @returns {Promise<{trackUri: string, trackName: string}|null>}
-   * @throws {Error} bei Auth- oder Timeout-Fehlern
    */
   async findTrackUri(artistName) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-    try {
-      const query = encodeURIComponent(`artist:${artistName}`);
-      const response = await this._fetchFn(
-        `${BASE_URL}/search?q=${query}&type=track&limit=1`,
-        {
-          signal: controller.signal,
-        }
-      );
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const data = await response.json();
-
-      const items = data.tracks && data.tracks.items;
-      if (!items || items.length === 0) {
-        return null;
-      }
-
-      return {
-        trackUri: items[0].uri,
-        trackName: items[0].name,
-      };
-    } catch (error) {
-      clearTimeout(timeoutId);
-
-      if (error.name === 'AbortError') {
-        throw new Error(
-          'Die Spotify API ist nicht erreichbar. Bitte Internetverbindung prüfen.'
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  /**
-   * Prüft, ob ein Track gültig ist (nicht leerer Name, gültige URI).
-   * @param {Object} track - Spotify Track Object
-   * @returns {boolean}
-   */
-  _isValidTrack(track) {
-    if (!track) return false;
-    const name = track.name;
-    const uri = track.uri;
-    return (
-      typeof name === 'string' &&
-      name.trim().length > 0 &&
-      typeof uri === 'string' &&
-      uri.startsWith('spotify:track:')
+    const query = encodeURIComponent(`artist:${artistName}`);
+    const response = await this._fetchWithTimeout(
+      `${BASE_URL}/search?q=${query}&type=track&limit=1`
     );
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const items = data.tracks && data.tracks.items;
+    if (!items || items.length === 0) return null;
+
+    return {
+      trackUri: items[0].uri,
+      trackName: items[0].name,
+    };
   }
 
   /**
-   * Ruft bis zu 5 Tracks für einen Künstler ab.
-   * Nutzt die Search API statt /top-tracks (zuverlässiger).
-   * @param {string} artistId - Spotify Artist ID
-   * @param {number} maxSize - Maximale Anzahl zurückzugebender Tracks (Standard: 5)
-   * @param {string} [artistName] - Künstlername für die Suche (optional, wird bei Bedarf nachgeladen)
-   * @returns {Promise<Array<{uri: string, name: string}>>} Array gültiger Tracks
+   * Ruft bis zu maxSize Tracks für einen Künstler ab (via Search API).
+   * @param {string} artistId
+   * @param {number} maxSize
+   * @param {string} [artistName] - wird bei Bedarf nachgeladen
+   * @returns {Promise<Array<{uri: string, name: string}>>}
    */
   async getArtistTopTracks(artistId, maxSize = 5, artistName = null) {
-    // Künstlername wird für die Search API benötigt
     let name = artistName;
     if (!name) {
       try {
@@ -337,57 +190,36 @@ export class SpotifyAPI {
       }
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
+    const query = encodeURIComponent(`artist:${name}`);
+    let response;
     try {
-      const query = encodeURIComponent(`artist:${name}`);
-      const response = await this._fetchFn(
-        `${BASE_URL}/search?q=${query}&type=track&limit=${maxSize * 2}`,
-        {
-          signal: controller.signal,
-        }
+      response = await this._fetchWithTimeout(
+        `${BASE_URL}/search?q=${query}&type=track&limit=${maxSize * 2}`
       );
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        console.error(
-          `Spotify API Fehler beim Laden der Tracks: ${response.status}`
-        );
-        return [];
-      }
-
-      const data = await response.json();
-
-      const items = (data.tracks && data.tracks.items) || [];
-
-      // Filter zu gültigen Tracks und begrenzen auf maxSize
-      const validTracks = [];
-      const seenUris = new Set();
-
-      for (const track of items) {
-        if (validTracks.length >= maxSize) break;
-        if (this._isValidTrack(track) && !seenUris.has(track.uri)) {
-          seenUris.add(track.uri);
-          validTracks.push({
-            uri: track.uri,
-            name: track.name,
-          });
-        }
-      }
-
-      return validTracks;
     } catch (error) {
-      clearTimeout(timeoutId);
-
-      if (error.name === 'AbortError') {
-        console.error('Timeout beim Laden der Tracks');
-      } else {
-        console.error('Fehler beim Laden der Tracks:', error.message);
-      }
-
+      console.error('Fehler beim Laden der Tracks:', error.message);
       return [];
     }
+
+    if (!response.ok) {
+      console.error(`Spotify API Fehler beim Laden der Tracks: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const items = (data.tracks && data.tracks.items) || [];
+
+    const validTracks = [];
+    const seenUris = new Set();
+
+    for (const track of items) {
+      if (validTracks.length >= maxSize) break;
+      if (isValidTrack(track) && !seenUris.has(track.uri)) {
+        seenUris.add(track.uri);
+        validTracks.push({ uri: track.uri, name: track.name });
+      }
+    }
+
+    return validTracks;
   }
 }

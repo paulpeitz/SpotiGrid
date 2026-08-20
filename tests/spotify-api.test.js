@@ -212,134 +212,6 @@ describe('SpotifyAPI', () => {
     });
   });
 
-  describe('findPreviewTrack', () => {
-    it('sendet Search-Request mit korrektem Query', async () => {
-      mockFetchFn.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          tracks: { items: [] },
-        }),
-      });
-
-      await api.findPreviewTrack('Radiohead');
-
-      expect(mockFetchFn).toHaveBeenCalledWith(
-        'https://api.spotify.com/v1/search?q=artist%3ARadiohead&type=track',
-        expect.objectContaining({
-          signal: expect.any(AbortSignal),
-        })
-      );
-    });
-
-    it('gibt {previewUrl, trackName} zurück für den ersten Track mit preview_url', async () => {
-      mockFetchFn.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          tracks: {
-            items: [
-              { name: 'Track ohne Preview', preview_url: null },
-              { name: 'Creep', preview_url: 'https://p.scdn.co/creep.mp3' },
-              { name: 'Karma Police', preview_url: 'https://p.scdn.co/karma.mp3' },
-            ],
-          },
-        }),
-      });
-
-      const result = await api.findPreviewTrack('Radiohead');
-
-      expect(result).toEqual({
-        previewUrl: 'https://p.scdn.co/creep.mp3',
-        trackName: 'Creep',
-      });
-    });
-
-    it('gibt null zurück wenn alle Tracks keine preview_url haben', async () => {
-      mockFetchFn.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          tracks: {
-            items: [
-              { name: 'Track A', preview_url: null },
-              { name: 'Track B', preview_url: null },
-            ],
-          },
-        }),
-      });
-
-      const result = await api.findPreviewTrack('Unknown Artist');
-
-      expect(result).toBe(null);
-    });
-
-    it('gibt null zurück wenn tracks.items leer ist', async () => {
-      mockFetchFn.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          tracks: { items: [] },
-        }),
-      });
-
-      const result = await api.findPreviewTrack('Nobody');
-
-      expect(result).toBe(null);
-    });
-
-    it('gibt null zurück bei nicht-OK Response', async () => {
-      mockFetchFn.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      });
-
-      const result = await api.findPreviewTrack('Radiohead');
-
-      expect(result).toBe(null);
-    });
-
-    it('gibt null zurück bei 401 Response', async () => {
-      mockFetchFn.mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-      });
-
-      const result = await api.findPreviewTrack('Radiohead');
-
-      expect(result).toBe(null);
-    });
-
-    it('wirft Timeout-Fehler bei AbortError', async () => {
-      mockFetchFn.mockRejectedValueOnce(
-        Object.assign(new Error('The operation was aborted'), {
-          name: 'AbortError',
-        })
-      );
-
-      await expect(api.findPreviewTrack('Radiohead')).rejects.toThrow(
-        'Die Spotify API ist nicht erreichbar'
-      );
-    });
-
-    it('encodiert Sonderzeichen im Künstlernamen korrekt', async () => {
-      mockFetchFn.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          tracks: { items: [] },
-        }),
-      });
-
-      await api.findPreviewTrack('AC/DC & Friends');
-
-      expect(mockFetchFn).toHaveBeenCalledWith(
-        expect.stringContaining('artist%3AAC%2FDC%20%26%20Friends'),
-        expect.anything()
-      );
-    });
-  });
-
   describe('getArtistTopTracks', () => {
     it('sendet Search-Request an die korrekte URL', async () => {
       mockFetchFn.mockResolvedValueOnce({
@@ -574,7 +446,7 @@ describe('SpotifyAPI', () => {
       const result = await api.getArtistTopTracks('abc123', 5, 'Artist');
 
       expect(result).toEqual([]);
-      expect(consoleSpy).toHaveBeenCalledWith('Timeout beim Laden der Tracks');
+      expect(consoleSpy).toHaveBeenCalledWith('Fehler beim Laden der Tracks:', expect.stringContaining('erreichbar'));
 
       consoleSpy.mockRestore();
     });

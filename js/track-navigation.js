@@ -1,26 +1,21 @@
 /**
- * Manages navigation within a TrackCollection.
- * Supports circular forward/back navigation.
+ * Handles circular navigation within a TrackCollection.
  */
-class TrackNavigation {
+export class TrackNavigation {
   /**
-   * @param {TrackCollection} collection - The track collection to navigate
+   * @param {import('./track-collection.js').TrackCollection} collection
    */
   constructor(collection) {
     this._collection = collection;
     this._currentIndex = 0;
   }
 
-  /**
-   * @returns {number} - Current track index
-   */
+  /** @returns {number} Current track index */
   getCurrentIndex() {
     return this._currentIndex;
   }
 
-  /**
-   * @returns {ValidTrack|null} - Current track or null if collection is empty
-   */
+  /** @returns {import('./track-utils.js').ValidTrack|null} Current track or null */
   getCurrentTrack() {
     if (!this._collection || this._collection.getCount() === 0) {
       return null;
@@ -29,43 +24,29 @@ class TrackNavigation {
   }
 
   /**
-   * Navigate to next track (circular - wraps from last to first).
-   * @returns {ValidTrack|null} - The new current track
+   * Navigate to next track (circular: last → first).
+   * @returns {import('./track-utils.js').ValidTrack|null}
    */
   forward() {
     const count = this._collection.getCount();
-    if (count === 0) {
-      return null;
-    }
-    
-    // Circular navigation: if at last, wrap to first; otherwise increment
+    if (count === 0) return null;
     this._currentIndex = (this._currentIndex + 1) % count;
-    
     return this.getCurrentTrack();
   }
 
   /**
-   * Navigate to previous track (circular - wraps from first to last).
-   * @returns {ValidTrack|null} - The new current track
+   * Navigate to previous track (circular: first → last).
+   * @returns {import('./track-utils.js').ValidTrack|null}
    */
   back() {
     const count = this._collection.getCount();
-    if (count === 0) {
-      return null;
-    }
-    
-    // Circular navigation: if at first, wrap to last; otherwise decrement
+    if (count === 0) return null;
     this._currentIndex = (this._currentIndex - 1 + count) % count;
-    
     return this.getCurrentTrack();
   }
 
-  /**
-   * @returns {boolean} - Whether navigation is possible (collection has 2+ tracks)
-   */
+  /** @returns {boolean} Whether navigation is possible (2+ tracks) */
   canNavigate() {
     return this._collection.isNavigable();
   }
 }
-
-export { TrackNavigation };

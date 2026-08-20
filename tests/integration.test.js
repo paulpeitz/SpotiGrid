@@ -332,19 +332,18 @@ describe('Integration: Full Happy-Path', () => {
       json: async () => artistIds,
     });
 
-    // 2. getArtists calls getArtist per ID individually via authenticatedFetch
-    // authenticatedFetch is mocked to just call fetch, so we need 20 responses
-    for (let i = 0; i < 20; i++) {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          id: artistIds[i],
+    // 2. getArtists batch endpoint
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        artists: artistIds.map((id, i) => ({
+          id: id,
           name: `Artist ${i}`,
-          images: [{ url: `https://img.com/${artistIds[i]}.jpg`, width: 640, height: 640 }],
-        }),
-      });
-    }
+          images: [{ url: `https://img.com/${id}.jpg`, width: 640, height: 640 }],
+        })),
+      }),
+    });
 
     await app.init();
 
@@ -366,18 +365,18 @@ describe('Integration: Full Happy-Path', () => {
       json: async () => artistIds,
     });
 
-    // 2. getArtists calls getArtist per ID individually
-    for (let i = 0; i < 20; i++) {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          id: artistIds[i],
+    // 2. getArtists batch endpoint
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        artists: artistIds.map((id, i) => ({
+          id: id,
           name: `Artist ${i}`,
-          images: [{ url: `https://img.com/${artistIds[i]}.jpg`, width: 640, height: 640 }],
-        }),
-      });
-    }
+          images: [{ url: `https://img.com/${id}.jpg`, width: 640, height: 640 }],
+        })),
+      }),
+    });
 
     await app.init();
 
@@ -394,6 +393,11 @@ describe('Integration: Full Happy-Path', () => {
       trackUri: 'spotify:track:123',
       trackName: 'Test Track',
     });
+
+    // Mock getArtistTopTracks to return tracks
+    vi.spyOn(app.api, 'getArtistTopTracks').mockResolvedValue([
+      { uri: 'spotify:track:123', name: 'Test Track' },
+    ]);
 
     // Click artist to start
     await app.handleArtistClick('artist0');

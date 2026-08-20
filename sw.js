@@ -11,6 +11,9 @@ const STATIC_ASSETS = [
   '/js/token-manager.js',
   '/js/track-collection.js',
   '/js/track-navigation.js',
+  '/js/track-utils.js',
+  '/js/pkce.js',
+  '/js/artist-cache.js',
   '/artists.json',
   '/manifest.json'
 ];
