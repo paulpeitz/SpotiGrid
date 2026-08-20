@@ -6,6 +6,11 @@
   <title>Zeltival 2027</title>
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="https://open.spotifycdn.com/cdn/images/favicon32.b64ecc03.png" type="image/png">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#e5758b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
 </head>
 <body>
   <header class="app-header">
@@ -43,5 +48,10 @@
 
   <script src="https://sdk.scdn.co/spotify-player.js"></script>
   <script type="module" src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js');
+    }
+  </script>
 </body>
 </html>
